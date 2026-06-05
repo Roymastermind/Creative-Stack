@@ -1,0 +1,6 @@
+{
+  "name": "IPL Auction Game",
+  "description": "Real-time online multiplayer IPL cricket auction draft game with custom slot rosters, WebRTC voice chat, draft log transaction histories, and Gemini AI tactical valuation insights.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

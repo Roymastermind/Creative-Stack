@@ -1,0 +1,89 @@
+{
+  "entities": {
+    "Room": {
+      "title": "Room",
+      "description": "An IPL Auction lobby and active session state with synchronized bidding.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique room ID" },
+        "name": { "type": "string", "description": "Lobby name" },
+        "hostId": { "type": "string", "description": "User ID of the room creator" },
+        "status": { "type": "string", "enum": ["lobby", "bidding", "paused", "finished"], "description": "Current room state" },
+        "currentBid": { "type": "number", "description": "Current bid amount in Lakhs" },
+        "currentBidderId": { "type": "string", "description": "UID of the current highest bidder" },
+        "currentBidderName": { "type": "string", "description": "Franchise name of the current highest bidder" },
+        "currentPlayerId": { "type": "string", "description": "ID of the player currently up for auction" },
+        "timerDuration": { "type": "number", "description": "Countdown timer length in seconds" },
+        "timerExpiresAt": { "type": "number", "description": "Unix Epoch timestamp in milliseconds for bid timer expiry" },
+        "budgetLimit": { "type": "number", "description": "Initial team purse in Lakhs (e.g. 10000 for 100 Cr)" },
+        "slotsConfig": { "type": "object", "description": "Required slot count for BAT, BOWL, AR, and WK" },
+        "members": { "type": "object", "description": "Structured map of members by UID with budget and compiled squad" },
+        "currentPlayerIndex": { "type": "number", "description": "Index of current player in the room's draft pool" },
+        "playerPoolIds": { "type": "array", "description": "Ordered array of player IDs in draft cycle" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Room creation time" }
+      },
+      "required": ["id", "name", "hostId", "status", "members", "createdAt"]
+    },
+    "Signal": {
+      "title": "Signal",
+      "description": "WebRTC P2P signaling candidate or session description for real-time voice chat.",
+      "type": "object",
+      "properties": {
+        "senderId": { "type": "string", "description": "UID of the sending peer" },
+        "targetId": { "type": "string", "description": "UID of the target receiving peer" },
+        "type": { "type": "string", "enum": ["offer", "answer", "candidate"], "description": "The type of signaling event" },
+        "payload": { "type": "string", "description": "JSON stringified WebRTC description or ICE candidate" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" }
+      },
+      "required": ["senderId", "targetId", "type", "payload", "createdAt"]
+    },
+    "Chat": {
+      "title": "Chat",
+      "description": "Lobby or live auction chat messages.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Message unique identifier" },
+        "senderId": { "type": "string", "description": "UID of author" },
+        "senderName": { "type": "string", "description": "Display name of franchise or user" },
+        "text": { "type": "string", "description": "Chat message text" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Message timestamp" }
+      },
+      "required": ["id", "senderId", "senderName", "text", "createdAt"]
+    },
+    "Log": {
+      "title": "Log",
+      "description": "Chronological audit logs of drafts, biddings, sales, and system resets.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Log identifier" },
+        "type": { "type": "string", "enum": ["bid", "sold", "unsold", "join", "leave", "pause", "resume", "system"], "description": "Type of event logged" },
+        "message": { "type": "string", "description": "Friendly readable description" },
+        "playerId": { "type": "string", "description": "Optional associated player ID" },
+        "playerName": { "type": "string", "description": "Optional associated player name" },
+        "amount": { "type": "number", "description": "Optional auction bid amount in Lakhs" },
+        "buyerId": { "type": "string", "description": "Franchise buyer UID if sold" },
+        "buyerName": { "type": "string", "description": "Franchise name of buyer if sold" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Log placement time" }
+      },
+      "required": ["id", "type", "message", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/rooms/{roomId}": {
+      "schema": "Room",
+      "description": "Interactive IPL auction bidding room."
+    },
+    "/rooms/{roomId}/signals/{signalId}": {
+      "schema": "Signal",
+      "description": "High-speed WebRTC P2P multi-user audio signaling network."
+    },
+    "/rooms/{roomId}/chats/{chatId}": {
+      "schema": "Chat",
+      "description": "Interactive real-time communication ledger."
+    },
+    "/rooms/{roomId}/logs/{logId}": {
+      "schema": "Log",
+      "description": "Auditable transaction logs of players sold, unsold, and bid events."
+    }
+  }
+}
