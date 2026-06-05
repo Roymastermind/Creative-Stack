@@ -83,27 +83,14 @@ export default function App() {
   useEffect(() => {
     testConnection();
     
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
         setCurrentUser(user);
         setAuthError(null);
-        setIsAuthLoading(false);
       } else {
-        try {
-          const anonymousCredential = await signInAnonymously(auth);
-          setCurrentUser(anonymousCredential.user);
-          setAuthError(null);
-        } catch (err) {
-          console.error("Anonymous authentication error on mount:", err);
-          if (err instanceof Error) {
-            setAuthError(err.message);
-          } else {
-            setAuthError(String(err));
-          }
-        } finally {
-          setIsAuthLoading(false);
-        }
+        setCurrentUser(null);
       }
+      setIsAuthLoading(false);
     });
 
     return () => unsubscribe();
