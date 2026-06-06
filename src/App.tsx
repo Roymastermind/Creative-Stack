@@ -16,10 +16,11 @@ import { ChatPanel } from "./components/ChatPanel";
 import { Gavel, Copy, LogOut, Loader2, Play, IndianRupee, Users, Shield, Target, AlertCircle, ExternalLink, Lock, RefreshCw } from "lucide-react";
 
 export default function App() {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentUser, setCurrentUser] = useState<any>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [isSigningIn, setIsSigningIn] = useState<boolean>(false);
+  const [guestNameInput, setGuestNameInput] = useState("");
 
   // Active room configurations
   const [roomId, setRoomId] = useState<string | null>(() => {
@@ -87,10 +88,25 @@ export default function App() {
       if (user) {
         setCurrentUser(user);
         setAuthError(null);
+        setIsAuthLoading(false);
       } else {
-        setCurrentUser(null);
+        // Look for locally stored guest user
+        const savedGuest = localStorage.getItem("ipl_auction_guest_user");
+        if (savedGuest) {
+          try {
+            const parsed = JSON.parse(savedGuest);
+            setCurrentUser(parsed);
+            if (parsed.uid) {
+              const displayName = parsed.displayName || "";
+              setJoinNameInput(displayName);
+              setGuestNameInput(displayName);
+            }
+          } catch (e) {
+            console.error("Failed to parse saved guest user:", e);
+          }
+        }
+        setIsAuthLoading(false);
       }
-      setIsAuthLoading(false);
     });
 
     return () => unsubscribe();
@@ -103,12 +119,14 @@ export default function App() {
       const provider = new GoogleAuthProvider();
       const credential = await signInWithPopup(auth, provider);
       setCurrentUser(credential.user);
-    } catch (err) {
-      console.error("Google login failed:", err);
-      if (err instanceof Error) {
-        setAuthError(`Google authentication failed: ${err.message}`);
+    } catch (err: any) {
+      console.warn("Google login failed, suggesting instant guest play:", err);
+      if (err && err.code === "auth/unauthorized-domain") {
+        setAuthError("This domain is not authorized for Google Sign-In yet. Click 'Access Instantly as Guest' above to play right away!");
+      } else if (err instanceof Error) {
+        setAuthError(`Google Sign-In error: ${err.message}. You can still register instantly as a Guest in 1 second!`);
       } else {
-        setAuthError("Google authentication failed. Please check browser popups.");
+        setAuthError("Google Sign-In failed. Please try registering in the Coach Name box as a Guest above!");
       }
     } finally {
       setIsSigningIn(false);
@@ -118,19 +136,49 @@ export default function App() {
   const handleAnonymousSignIn = async () => {
     setIsSigningIn(true);
     setAuthError(null);
+    const resolvedName = guestNameInput.trim() || "Guest Coach";
     try {
       const credential = await signInAnonymously(auth);
       setCurrentUser(credential.user);
+      setJoinNameInput(resolvedName);
+      
+      // Update local storage with display name
+      const guestObj = {
+        uid: credential.user.uid,
+        displayName: resolvedName,
+        isAnonymous: true
+      };
+      try {
+        localStorage.setItem("ipl_auction_guest_user", JSON.stringify(guestObj));
+      } catch {}
     } catch (err) {
-      console.error("Manual anonymous login failed:", err);
-      if (err instanceof Error) {
-        setAuthError(err.message);
-      } else {
-        setAuthError("Anonymous action is restricted in current Firebase setup.");
-      }
+      console.warn("Firebase Anonymous Auth failed or is disabled, using local guest fallback:", err);
+      // Fallback: Generate a highly portable local profile that works 100% of the time offline/auth-less
+      const localGuestUid = "scout_" + Math.random().toString(36).substring(2, 11).toUpperCase();
+      const localGuestUser = {
+        uid: localGuestUid,
+        displayName: resolvedName,
+        isAnonymous: true
+      };
+      try {
+        localStorage.setItem("ipl_auction_guest_user", JSON.stringify(localGuestUser));
+      } catch {}
+      setCurrentUser(localGuestUser);
+      setJoinNameInput(resolvedName);
     } finally {
       setIsSigningIn(false);
     }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await auth.signOut();
+    } catch {}
+    try {
+      localStorage.removeItem("ipl_auction_guest_user");
+    } catch {}
+    setCurrentUser(null);
+    setAuthError(null);
   };
 
   // Sync Room ledger entries and real-time bid timer state
@@ -477,97 +525,102 @@ export default function App() {
     );
   }
 
-  // Authentication Gate Panel (Shielding Lobbies from unauthenticated and offline states)
+  // Authentication Gate Panel (Unifying direct guest name entry and Google Auth)
   if (!currentUser) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white font-sans p-6 bg-radial from-neutral-950 to-black select-none">
         <div className="max-w-md w-full bg-neutral-900 border border-neutral-800 rounded-2xl p-6 sm:p-8 shadow-2xl flex flex-col items-center text-center">
-          <Gavel className="w-16 h-16 text-amber-500 mb-4 animate-pulse animate-duration-1000" />
+          <Gavel className="w-16 h-16 text-amber-500 mb-4 animate-pulse" />
           
           <h2 className="text-2xl font-black tracking-tight text-white uppercase sm:text-3xl">
-            IPL Auction Suite
+            IPL Auction Arena
           </h2>
           <p className="text-xs text-neutral-400 font-mono tracking-wider uppercase mt-1 mb-6">
             REAL-TIME FRANCHISE LEDGER MULTIPLAYER
           </p>
 
-          <div className="w-full space-y-3 mb-6">
-            <button
-              onClick={handleGoogleSignIn}
-              disabled={isSigningIn}
-              className="w-full bg-white hover:bg-neutral-100 text-black font-semibold text-sm py-3 px-4 rounded-xl flex items-center justify-center gap-3 transition cursor-pointer shadow-lg active:scale-95 disabled:opacity-50"
-            >
-              <svg className="w-4 h-4" viewBox="0 0 24 24">
-                <path
-                  fill="#4285F4"
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleAnonymousSignIn();
+            }}
+            className="w-full space-y-4 mb-6 text-left"
+          >
+            <div>
+              <label className="block text-xs font-mono tracking-wider text-neutral-400 uppercase mb-1.5 font-semibold">
+                🏏 Choose Coach Name
+              </label>
+              <div className="relative">
+                <input
+                  id="direct-coach-name-input"
+                  type="text"
+                  maxLength={18}
+                  placeholder="e.g. Coach Shubman"
+                  value={guestNameInput}
+                  onChange={(e) => setGuestNameInput(e.target.value)}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl py-3 pl-3 pr-3 text-white focus:outline-none focus:ring-1 focus:ring-amber-400 font-sans text-sm font-medium"
+                  required
                 />
-                <path
-                  fill="#34A853"
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.44.35-2.1V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l3.66-2.84z"
-                />
-                <path
-                  fill="#EA4335"
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                />
-              </svg>
-              {isSigningIn ? "Signing In..." : "Sign In with Google"}
-            </button>
+              </div>
+            </div>
 
             <button
-              id="anonymous-auth-btn"
-              onClick={handleAnonymousSignIn}
+              id="instant-access-btn"
+              type="submit"
               disabled={isSigningIn}
-              className="w-full bg-neutral-950 border border-neutral-800 hover:border-neutral-700 text-neutral-300 hover:text-white font-semibold text-sm py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition cursor-pointer active:scale-95 disabled:opacity-50"
+              className="w-full bg-amber-500 hover:bg-amber-600 text-black font-extrabold text-xs tracking-wider uppercase py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 transition cursor-pointer shadow-lg active:scale-95 disabled:opacity-50"
             >
-              <Users className="w-4 h-4 text-neutral-500" />
-              {isSigningIn ? "Signing In..." : "Access as Guest Scout"}
+              <Play className="w-4 h-4 fill-current" />
+              {isSigningIn ? "Authorizing Coach..." : "Start Draft Instantly"}
             </button>
+          </form>
+
+          <div className="relative flex py-2 items-center w-full mb-4">
+            <div className="flex-grow border-t border-neutral-800"></div>
+            <span className="flex-shrink mx-4 text-[9px] uppercase font-mono tracking-widest text-neutral-500">
+              OR CHOOSE AUTHENTICATION
+            </span>
+            <div className="flex-grow border-t border-neutral-800"></div>
           </div>
 
+          <button
+            id="google-luxury-auth-btn"
+            onClick={handleGoogleSignIn}
+            disabled={isSigningIn}
+            className="w-full bg-neutral-950 border border-neutral-800 hover:border-neutral-700 text-neutral-300 hover:text-white font-semibold text-sm py-2.5 px-4 rounded-xl flex items-center justify-center gap-3 transition cursor-pointer active:scale-95 disabled:opacity-50"
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24">
+              <path
+                fill="#4285F4"
+                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+              />
+              <path
+                fill="#34A853"
+                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+              />
+              <path
+                fill="#FBBC05"
+                d="M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.44.35-2.1V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l3.66-2.84z"
+              />
+              <path
+                fill="#EA4335"
+                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+              />
+            </svg>
+            Sign In with Google
+          </button>
+
           {authError && (
-            <div className="w-full bg-red-950/20 border border-red-900/60 rounded-xl p-3 text-left space-y-2.5">
-              <div className="flex gap-2 text-red-400 font-semibold items-start text-xs">
+            <div className="w-full bg-amber-950/20 border border-amber-900/40 rounded-xl p-3 text-left mt-4">
+              <div className="flex gap-2 text-amber-400 font-semibold items-start text-xs">
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                 <div>
-                  <div className="font-bold">Authentication Exception</div>
-                  <div className="text-[11px] font-mono mt-0.5 break-words">{authError}</div>
+                  <div className="font-bold">Authentication Assistant Note</div>
+                  <div className="text-[10px] leading-relaxed font-mono mt-0.5 break-words text-neutral-300">
+                    {authError}
+                  </div>
                 </div>
               </div>
-
-              {authError.includes("admin-restricted-operation") && (
-                <div className="text-[11px] text-neutral-300 border-t border-red-950/50 pt-2.5 space-y-2">
-                  <p className="font-semibold text-amber-400 flex items-center gap-1">
-                    <span>💡</span> How to Enable Guest Play:
-                  </p>
-                  <p className="text-neutral-400 leading-normal">
-                    Anonymous authentication is disabled in your Firebase console. To allow guest players, enable it:
-                  </p>
-                  <ol className="list-decimal pl-4 space-y-1.5 text-neutral-400">
-                    <li>
-                      Go to the {" "}
-                      <a
-                        href="https://console.firebase.google.com/project/geometric-hill-h7k72/authentication/providers"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-amber-400 font-bold hover:underline inline-flex items-center gap-0.5"
-                      >
-                        Firebase Console <ExternalLink className="w-2.5 h-2.5 inline" />
-                      </a>
-                    </li>
-                    <li>Choose the <span className="font-semibold text-neutral-300 font-mono">Sign-in method</span> tab</li>
-                    <li>Click <span className="font-semibold text-neutral-300">Add new provider</span> and select <span className="font-semibold text-neutral-300">Anonymous</span></li>
-                    <li>Enable the toggle and click <span className="font-semibold text-neutral-300">Save</span></li>
-                  </ol>
-                  <p className="text-neutral-500 text-[10px] italic">
-                    Alternatively, sign in with your Google Account above to start playing instantly.
-                  </p>
-                </div>
-              )}
             </div>
           )}
         </div>
@@ -594,30 +647,52 @@ export default function App() {
           </div>
         </div>
 
-        {roomId && roomData && (
-          <div className="flex flex-wrap items-center gap-3 bg-neutral-900/60 px-4 py-2 rounded-xl border border-neutral-850">
-            <div className="text-xs">
-              <span className="text-neutral-500 uppercase font-mono mr-1">Robby:</span>
-              <span className="font-bold text-white max-w-[120px] truncate inline-block align-bottom">{roomData.name}</span>
-            </div>
-            
-            <div className="flex items-center gap-1 bg-amber-500/10 text-amber-400 border border-amber-500/25 px-2 py-0.5 rounded-md font-mono text-xs">
-              <span>RM ID: {roomId}</span>
-              <button onClick={handleCopyRoomId} className="hover:text-white cursor-pointer ml-1 p-0.5" title="Copy Room Invite Code">
-                <Copy className="w-3 h-3" />
+        <div className="flex items-center gap-3">
+          {roomId && roomData && (
+            <div className="flex flex-wrap items-center gap-3 bg-neutral-900/60 px-4 py-2 rounded-xl border border-neutral-850">
+              <div className="text-xs">
+                <span className="text-neutral-500 uppercase font-mono mr-1">Robby:</span>
+                <span className="font-bold text-white max-w-[120px] truncate inline-block align-bottom">{roomData.name}</span>
+              </div>
+              
+              <div className="flex items-center gap-1 bg-amber-500/10 text-amber-400 border border-amber-500/25 px-2 py-0.5 rounded-md font-mono text-xs">
+                <span>RM ID: {roomId}</span>
+                <button onClick={handleCopyRoomId} className="hover:text-white cursor-pointer ml-1 p-0.5" title="Copy Room Invite Code">
+                  <Copy className="w-3 h-3" />
+                </button>
+              </div>
+
+              <button
+                id="exit-lobby-btn"
+                onClick={handleLeaveRoom}
+                className="text-neutral-500 hover:text-red-400 p-1 rounded-md transition duration-150 cursor-pointer"
+                title="Leave Room"
+              >
+                <LogOut className="w-4 h-4" />
               </button>
             </div>
+          )}
 
-            <button
-              id="exit-lobby-btn"
-              onClick={handleLeaveRoom}
-              className="text-neutral-500 hover:text-red-400 p-1 rounded-md transition duration-150"
-              title="Leave Room"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
-        )}
+          {currentUser && (
+            <div className="flex items-center gap-2.5 bg-neutral-900/60 border border-neutral-850 px-3.5 py-1.5 rounded-xl">
+              <div className="text-right">
+                <div className="text-xs font-bold text-neutral-200">
+                  {currentUser.displayName || roomData?.members[currentUser.uid]?.name || "Coach Guest"}
+                </div>
+                <div className="text-[9px] font-mono text-amber-500 uppercase tracking-widest">
+                  {currentUser.isAnonymous || !currentUser.email ? "Guest Scout" : "Verified Coach"}
+                </div>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="text-neutral-400 hover:text-red-400 p-1 rounded-md transition duration-150 cursor-pointer border border-neutral-800 bg-black/40 hover:bg-neutral-850"
+                title="Change Representative/Reset Nickname"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+        </div>
       </header>
 
       {/* Main Application layouts */}

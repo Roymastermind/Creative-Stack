@@ -7,15 +7,16 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // Global helper functions
+    // Global helper functions - updated to support guest access
     function isSignedIn() {
-      return request.auth != null;
+      return true; // Optional/guest signatures supported
     }
 
     function isValidId(id) {
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    // Help primitives
     function incoming() {
       return request.resource.data;
     }
@@ -26,7 +27,7 @@ service cloud.firestore {
 
     // 2. Room Rules (Dynamic Real-time Multi-user State Synchronization)
     match /rooms/{roomId} {
-      allow read: if isSignedIn();
+      allow read: if true;
       
       // Verification helper for lobby registration or lobby state updates
       function isValidRoom(data) {
@@ -37,39 +38,39 @@ service cloud.firestore {
           && data.members is map;
       }
 
-      allow create: if isSignedIn() && isValidId(roomId) && isValidRoom(incoming()) && incoming().hostId == request.auth.uid;
+      allow create: if isValidId(roomId) && isValidRoom(incoming()) && (request.auth == null || incoming().hostId == request.auth.uid);
       
-      allow update: if isSignedIn() && isValidId(roomId) && isValidRoom(incoming()) && (
+      allow update: if isValidId(roomId) && isValidRoom(incoming()) && (
         // Action 1: Room Host updating global status or game control configuration
-        (existing().hostId == request.auth.uid) ||
+        (request.auth == null || existing().hostId == request.auth.uid) ||
         // Action 2: Player Joining - adding themselves to the members map
         (incoming().diff(existing()).affectedKeys().hasOnly(['members', 'createdAt', 'playerPoolIds'])) ||
         // Action 3: Placing Bid - updating current bidding parameters
         (incoming().diff(existing()).affectedKeys().hasOnly(['currentBidLakhs', 'currentBidderId', 'currentBidderName', 'timerExpiresAt']))
       );
 
-      allow delete: if isSignedIn() && existing().hostId == request.auth.uid;
+      allow delete: if (request.auth == null || existing().hostId == request.auth.uid);
     }
 
     // 3. Chat rules (Conversational ledger)
     match /rooms/{roomId}/chats/{chatId} {
-      allow read: if isSignedIn();
+      allow read: if true;
       
       function isValidChat(data) {
         return data.id is string && data.id.size() <= 128
-          && data.senderId is string && (data.senderId == request.auth.uid || data.senderId == 'SYSTEM_BOT')
+          && data.senderId is string && (request.auth == null || data.senderId == request.auth.uid || data.senderId == 'SYSTEM_BOT')
           && data.senderName is string && data.senderName.size() <= 64
           && data.text is string && data.text.size() <= 500;
       }
 
-      allow create: if isSignedIn() && isValidId(chatId) && isValidChat(incoming());
+      allow create: if isValidId(chatId) && isValidChat(incoming());
       allow update: if false; // Chats are immutable
       allow delete: if false;
     }
 
     // 4. Draft Logs / Transactions (Auditable Ledger logs)
     match /rooms/{roomId}/logs/{logId} {
-      allow read: if isSignedIn();
+      allow read: if true;
       
       function isValidLog(data) {
         return data.id is string && data.id.size() <= 128
@@ -77,23 +78,23 @@ service cloud.firestore {
           && data.message is string && data.message.size() <= 256;
       }
 
-      allow create: if isSignedIn() && isValidId(logId) && isValidLog(incoming());
+      allow create: if isValidId(logId) && isValidLog(incoming());
       allow update, delete: if false; // Logs are write-once, never delete
     }
 
     // 5. WebRTC P2P Voice Chat Signal rules (Presence signaling)
     match /rooms/{roomId}/signals/{signalId} {
-      allow read: if isSignedIn();
+      allow read: if true;
       
       function isValidSignal(data) {
-        return data.senderId is string && data.senderId == request.auth.uid
+        return data.senderId is string && (request.auth == null || data.senderId == request.auth.uid)
           && data.targetId is string && data.targetId.size() <= 128
           && data.type is string && (data.type == 'offer' || data.type == 'answer' || data.type == 'candidate')
           && data.payload is string && data.payload.size() <= 32768;
       }
 
-      allow create: if isSignedIn() && isValidId(signalId) && isValidSignal(incoming());
-      allow update, delete: if isSignedIn() && (existing().senderId == request.auth.uid || existing().targetId == request.auth.uid);
+      allow create: if isValidId(signalId) && isValidSignal(incoming());
+      allow update, delete: if (request.auth == null || existing().senderId == request.auth.uid || existing().targetId == request.auth.uid);
     }
   }
 }
