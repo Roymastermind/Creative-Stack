@@ -65,13 +65,14 @@ export interface AuctionRoom {
   id: string;
   name: string;
   hostId: string;
-  status: "lobby" | "bidding" | "paused" | "finished";
+  status: "lobby" | "bidding" | "paused" | "finished" | "intermission";
   currentBidLakhs: number;
   currentBidderId: string | null;
   currentBidderName: string | null;
   currentPlayerId: string | null;
   timerDurationSeconds: number;
   timerExpiresAt: number | null; // Milliseconds timestamp
+  intermissionExpiresAt?: number | null; // Milliseconds timestamp
   budgetLimitLakhs: number;     // e.g. 10000 = 100 Crore
   slotsConfig: RosterConfig;
   members: Record<string, FranchiseMember>;

@@ -41,7 +41,7 @@ export const CreateLobby: React.FC<CreateLobbyProps> = ({ onJoinRoom, onCreateRo
     e.preventDefault();
     if (!name.trim()) return alert("Please enter your name");
     if (!roomIdInput.trim()) return alert("Please enter a Room ID");
-    onJoinRoom(roomIdInput.trim().toUpperCase(), name.trim(), franchise);
+    onJoinRoom(roomIdInput.trim().toUpperCase(), name.trim(), "");
   };
 
   const handleCreate = (e: React.FormEvent) => {
@@ -112,39 +112,21 @@ export const CreateLobby: React.FC<CreateLobbyProps> = ({ onJoinRoom, onCreateRo
         <div className="p-6">
           {/* Global User Setup */}
           <div className="mb-6">
-            <h3 className="text-xs font-mono tracking-widest text-neutral-400 uppercase mb-2">
-              Step 1: Your Franchise Identity
+            <h3 className="text-xs font-mono tracking-widest text-neutral-400 uppercase mb-2 flex items-center gap-1.5">
+              <span>🏆</span> Step 1: Your Coach Identity
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-sans text-neutral-400 mb-1">Your Name</label>
-                <input
-                  id="user-name-input"
-                  type="text"
-                  maxLength={18}
-                  placeholder="e.g. Coach Rohit"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg py-2.5 px-3 text-white focus:outline-none focus:ring-1 focus:ring-amber-400 font-sans"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-sans text-neutral-400 mb-1">Select IPL Franchise</label>
-                <select
-                  id="user-franchise-select"
-                  value={franchise}
-                  onChange={(e) => setFranchise(e.target.value)}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg py-2.5 px-3 text-white focus:outline-none focus:ring-1 focus:ring-amber-400 font-sans"
-                >
-                  {FRANCHISES.map((franch) => (
-                    <option key={franch.id} value={franch.id}>
-                      {franch.logoText} - {franch.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            <div>
+              <label className="block text-xs font-sans text-neutral-400 mb-1.5">Your Display Name</label>
+              <input
+                id="user-name-input"
+                type="text"
+                maxLength={18}
+                placeholder="e.g. Coach Virat"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full bg-neutral-950 border border-neutral-800 rounded-lg py-3 px-4 text-white focus:outline-none focus:ring-1 focus:ring-amber-400 font-sans text-sm font-semibold"
+                required
+              />
             </div>
           </div>
 
@@ -191,18 +173,38 @@ export const CreateLobby: React.FC<CreateLobbyProps> = ({ onJoinRoom, onCreateRo
                 Step 2: Define Room Config
               </h3>
               
-              <div className="mb-4">
-                <label className="block text-xs font-sans text-neutral-400 mb-1">Auction Room Name</label>
-                <input
-                  id="create-room-name-input"
-                  type="text"
-                  maxLength={32}
-                  placeholder="e.g. Mega Clash of Friends"
-                  value={roomName}
-                  onChange={(e) => setRoomName(e.target.value)}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg py-2.5 px-3 text-white focus:outline-none focus:ring-1 focus:ring-amber-400 font-sans"
-                  required
-                />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-xs font-sans text-neutral-400 mb-1 flex items-center gap-1.5">
+                    Select Your representational Franchise
+                  </label>
+                  <select
+                    id="user-franchise-select"
+                    value={franchise}
+                    onChange={(e) => setFranchise(e.target.value)}
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-lg py-2.5 px-3 text-white focus:outline-none focus:ring-1 focus:ring-amber-400 font-sans text-xs"
+                  >
+                    {FRANCHISES.map((franch) => (
+                      <option key={franch.id} value={franch.id}>
+                        {franch.logoText} - {franch.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-sans text-neutral-400 mb-1">Auction Room Name</label>
+                  <input
+                    id="create-room-name-input"
+                    type="text"
+                    maxLength={32}
+                    placeholder="e.g. Mega Clash of Friends"
+                    value={roomName}
+                    onChange={(e) => setRoomName(e.target.value)}
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-lg py-2.5 px-3 text-white focus:outline-none focus:ring-1 focus:ring-amber-400 font-sans text-xs"
+                    required
+                  />
+                </div>
               </div>
 
               {/* Game Mode Selector */}

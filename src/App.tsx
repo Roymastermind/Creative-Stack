@@ -246,12 +246,17 @@ export default function App() {
       isActive: true
     };
 
-    // Fully randomize/shuffle the player pool sequence (using Fisher-Yates shuffle)
-    const randomizedPlayers = [...IPL_PLAYERS_POOL];
-    for (let i = randomizedPlayers.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [randomizedPlayers[i], randomizedPlayers[j]] = [randomizedPlayers[j], randomizedPlayers[i]];
-    }
+    // Group players pool-wise and shuffle within each pool
+    const poolOrder = ["MQR", "BAT", "WK", "AR", "SPIN", "FAST"];
+    const randomizedPlayers: any[] = [];
+    poolOrder.forEach(sid => {
+      const setPlayers = IPL_PLAYERS_POOL.filter(p => (p.setId || "FAST") === sid);
+      for (let i = setPlayers.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [setPlayers[i], setPlayers[j]] = [setPlayers[j], setPlayers[i]];
+      }
+      randomizedPlayers.push(...setPlayers);
+    });
 
     const membersMap: Record<string, FranchiseMember> = {
       [currentUser.uid]: initialMember
@@ -329,15 +334,17 @@ export default function App() {
       const activeRoom = snap.data() as AuctionRoom;
 
       // Verify franchise tag is not already occupied by another joined human
-      const occupiedFranchises = Object.values(activeRoom.members).map(m => m.franchiseName);
       let selectedFranchise = franchiseId;
-      if (occupiedFranchises.includes(selectedFranchise)) {
-        const unoccupied = FRANCHISES.find(f => !occupiedFranchises.includes(f.id));
-        if (unoccupied) {
-          selectedFranchise = unoccupied.id;
-        } else {
-          alert("Lobby is full. Max 10 coaches are permitted in this auction slot.");
-          return;
+      if (selectedFranchise !== "") {
+        const occupiedFranchises = Object.values(activeRoom.members).map(m => m.franchiseName);
+        if (occupiedFranchises.includes(selectedFranchise)) {
+          const unoccupied = FRANCHISES.find(f => !occupiedFranchises.includes(f.id));
+          if (unoccupied) {
+            selectedFranchise = unoccupied.id;
+          } else {
+            alert("Lobby is full. Max 10 coaches are permitted in this auction slot.");
+            return;
+          }
         }
       }
 
@@ -361,7 +368,9 @@ export default function App() {
       await setDoc(doc(db, `rooms/${targetRoomId}/logs`, logId), {
         id: logId,
         type: LogType.JOIN,
-        message: `🏏 ${joinerName} joined the auction room representing ${selectedFranchise}!`,
+        message: selectedFranchise
+          ? `🏏 ${joinerName} joined the auction room representing ${selectedFranchise}!`
+          : `🏏 ${joinerName} joined the auction room!`,
         createdAt: new Date().toISOString()
       });
 
@@ -666,68 +675,28 @@ export default function App() {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-xs font-mono tracking-wider text-neutral-450 mb-2 uppercase">Claim Representational Franchise</label>
-                  <div className="grid grid-cols-2 gap-2 max-h-[180px] overflow-y-auto pr-1">
-                    {FRANCHISES.map((franch) => {
-                      const occupiedBy = Object.values(roomData.members).find(
-                        (m: any) => m.franchiseName === franch.id
-                      ) as FranchiseMember | undefined;
-                      const isOccupied = !!occupiedBy;
-                      const isSelected = joinFranchise === franch.id;
-
-                      return (
-                        <button
-                          key={franch.id}
-                          type="button"
-                          disabled={isOccupied}
-                          onClick={() => setJoinFranchise(franch.id)}
-                          className={`flex flex-col p-2.5 rounded-lg border text-left transition duration-150 cursor-pointer ${
-                            isSelected
-                              ? "bg-amber-500/15 border-amber-500 shadow-inner"
-                              : isOccupied
-                              ? "bg-neutral-950 border-neutral-900/50 opacity-25 cursor-not-allowed"
-                              : "bg-neutral-900 border-neutral-850 hover:bg-neutral-800 hover:border-neutral-750"
-                          }`}
-                        >
-                          <div className="flex justify-between items-center w-full">
-                            <span className="text-xs font-bold text-white">{franch.logoText}</span>
-                            {isSelected && (
-                              <span className="text-[7.5px] bg-amber-500 text-black font-bold px-1 rounded">CLAIM</span>
-                            )}
-                          </div>
-                          <span className="text-[10px] text-neutral-400 truncate mt-0.5 w-full">{franch.name}</span>
-                          {isOccupied && occupiedBy && (
-                            <span className="text-[8.5px] text-neutral-500 truncate mt-0.5">🔒 {occupiedBy.name}</span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
+                <div className="flex gap-3 mt-4">
+                  <button
+                    onClick={() => setRoomId(null)}
+                    className="flex-1 bg-neutral-950 hover:bg-neutral-900 text-neutral-400 hover:text-white font-semibold py-3 px-4 rounded-lg border border-neutral-800 transition text-xs uppercase font-mono tracking-wide"
+                  >
+                    Exit Room
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (!joinNameInput.trim()) {
+                        alert("Please enter your name.");
+                        return;
+                      }
+                      handleJoinRoom(roomId!, joinNameInput.trim(), "");
+                    }}
+                    className="flex-[2] bg-amber-500 hover:bg-amber-600 text-black font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-1.5 shadow-lg select-none cursor-pointer text-xs uppercase"
+                  >
+                    <Play className="w-4 h-4" /> Enter Auction
+                  </button>
                 </div>
-              </div>
 
-              <div className="flex gap-3 mt-2">
-                <button
-                  onClick={() => setRoomId(null)}
-                  className="flex-1 bg-neutral-950 hover:bg-neutral-900 text-neutral-400 hover:text-white font-semibold py-3 px-4 rounded-lg border border-neutral-800 transition text-xs uppercase font-mono tracking-wide"
-                >
-                  Exit Room
-                </button>
-                <button
-                  onClick={() => {
-                    if (!joinNameInput.trim()) {
-                      alert("Please enter your name.");
-                      return;
-                    }
-                    handleJoinRoom(roomId, joinNameInput.trim(), joinFranchise);
-                  }}
-                  className="flex-[2] bg-amber-500 hover:bg-amber-600 text-black font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-1.5 shadow-lg select-none cursor-pointer text-xs uppercase"
-                >
-                  <Play className="w-4 h-4" /> Claim & Play
-                </button>
               </div>
-
             </div>
           </div>
         ) : (
@@ -869,6 +838,39 @@ export default function App() {
             ) : (
               /* ACTIVE AUCTION GRID ROUTING */
               <div className="lg:col-span-8 flex flex-col gap-6">
+                {!roomData.members[currentUser!.uid]?.franchiseName && (
+                  <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/20 rounded-2xl p-5 shadow-lg flex flex-col gap-4 animate-fade-in">
+                    <div className="flex items-start md:items-center gap-3">
+                      <div className="text-2xl">⚡</div>
+                      <div>
+                        <h4 className="text-sm font-bold text-white uppercase tracking-wide">Pick a Team to Start Bidding!</h4>
+                        <p className="text-xs text-neutral-400 mt-0.5">
+                          You have successfully joined the room. Choose any available franchise below to represent your team and participate in live bidding.
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex flex-wrap gap-2.5">
+                      {FRANCHISES.filter(f => !Object.values(roomData.members).some((m: any) => m.franchiseName === f.id)).map((franchise) => (
+                        <button
+                          key={franchise.id}
+                          onClick={() => handleSelectFranchise(franchise.id)}
+                          style={{ borderColor: franchise.color + "30" }}
+                          className="bg-neutral-950 hover:bg-neutral-900 border text-xs px-4 py-2.5 rounded-xl flex items-center gap-2 font-mono font-semibold transition hover:-translate-y-0.5 shadow-sm text-neutral-300 select-none cursor-pointer"
+                        >
+                          <span style={{ backgroundColor: franchise.color }} className="w-2.5 h-2.5 rounded-full block"></span>
+                          <span>{franchise.id}</span>
+                        </button>
+                      ))}
+                      {FRANCHISES.filter(f => !Object.values(roomData.members).some((m: any) => m.franchiseName === f.id)).length === 0 && (
+                        <span className="text-xs text-red-400 font-mono italic">
+                          ⚠️ All franchises are claimed! You are spectating the draft.
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <ActiveAuction 
                   room={roomData} 
                   activeMemberId={currentUser!.uid} 

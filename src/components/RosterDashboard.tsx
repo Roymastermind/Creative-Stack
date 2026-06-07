@@ -17,10 +17,10 @@ export const RosterDashboard: React.FC<RosterDashboardProps> = ({ room, activeMe
   const [selectedFranchiseId, setSelectedFranchiseId] = useState<string>(activeMemberId);
   const selectedMember: FranchiseMember | undefined = room.members[selectedFranchiseId];
 
-  if (!selectedMember) {
+  if (!selectedMember || !selectedMember.franchiseName) {
     return (
-      <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-2xl text-center text-neutral-400 font-sans">
-        Select a franchise to view their roster.
+      <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-xl text-center text-neutral-400 font-sans">
+        Pick a franchise team above to unlock your roster ledger and participate! Or select any active opponent coach to review their squad sheets.
       </div>
     );
   }
@@ -103,7 +103,7 @@ export const RosterDashboard: React.FC<RosterDashboardProps> = ({ room, activeMe
               <span className="text-base">
                 {member.uid === activeMemberId ? "⭐" : "🏏"}
               </span>
-              <span>{member.franchiseName} ({member.name})</span>
+              <span>{member.franchiseName || "Unassigned"} ({member.name})</span>
             </button>
           ))}
         </div>

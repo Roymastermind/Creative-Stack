@@ -55,6 +55,37 @@ export const ActiveAuction: React.FC<ActiveAuctionProps> = ({
     return () => clearInterval(interval);
   }, [room.status, room.timerExpiresAt, isHost, room.currentPlayerId, room.currentBidLakhs]);
 
+  const [intermissionTimeLeft, setIntermissionTimeLeft] = useState<number>(0);
+
+  // Intermission Timer Ticker Loop
+  useEffect(() => {
+    if (room.status !== "intermission" || !room.intermissionExpiresAt) {
+      setIntermissionTimeLeft(0);
+      return;
+    }
+
+    const interval = setInterval(async () => {
+      const now = Date.now();
+      const diff = Math.max(0, Math.round((room.intermissionExpiresAt! - now) / 1000));
+      setIntermissionTimeLeft(diff);
+
+      if (diff === 0 && isHost) {
+        clearInterval(interval);
+        try {
+          const roomRef = doc(db, "rooms", room.id);
+          await updateDoc(roomRef, {
+            status: "bidding",
+            timerExpiresAt: Date.now() + (room.timerDurationSeconds || 15) * 1000
+          });
+        } catch (e) {
+          console.error("Failed to auto-resume after intermission:", e);
+        }
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [room.status, room.intermissionExpiresAt, isHost]);
+
   // --- AUTOMATED IPL AI BOT ENGINE ---
   // Runs on the room host's browser. If enabled, non-human controlled franchises bid on players.
   useEffect(() => {
@@ -325,17 +356,41 @@ export const ActiveAuction: React.FC<ActiveAuctionProps> = ({
       // Append drafted player ID to slots
       const updatedCategorySlots = [...(buyerMember.slots[activePlayer.category] || []), activePlayer.id];
 
+      // Figure out the next player state info
+      const targetIndex = room.currentPlayerIndex + 1;
+      let updateFields: any = {
+        [`members.${buyerUid}.budgetLakhs`]: newBudgetLakhs,
+        [`members.${buyerUid}.slots.${activePlayer.category}`]: updatedCategorySlots,
+        currentBidLakhs: 0,
+        currentBidderId: null,
+        currentBidderName: null,
+      };
+
+      if (targetIndex >= room.playerPoolIds.length) {
+        updateFields.status = "finished";
+        updateFields.currentPlayerId = null;
+        updateFields.timerExpiresAt = null;
+      } else {
+        const nextId = room.playerPoolIds[targetIndex];
+        const nextPlayer = IPL_PLAYERS_POOL.find(p => p.id === nextId);
+        const isPoolChanged = nextPlayer && activePlayer.setId !== nextPlayer.setId;
+
+        updateFields.currentPlayerIndex = targetIndex;
+        updateFields.currentPlayerId = nextId;
+
+        if (isPoolChanged) {
+          updateFields.status = "intermission";
+          updateFields.timerExpiresAt = null;
+          updateFields.intermissionExpiresAt = Date.now() + 5000;
+        } else {
+          updateFields.status = "bidding";
+          updateFields.timerExpiresAt = Date.now() + (room.timerDurationSeconds || 15) * 1000;
+        }
+      }
+
       // Atomic Firebase state update
       try {
-        await updateDoc(roomRef, {
-          status: "lobby", // reset to lobby
-          [`members.${buyerUid}.budgetLakhs`]: newBudgetLakhs,
-          [`members.${buyerUid}.slots.${activePlayer.category}`]: updatedCategorySlots,
-          currentBidLakhs: 0,
-          currentBidderId: null,
-          currentBidderName: null,
-          timerExpiresAt: null
-        });
+        await updateDoc(roomRef, updateFields);
       } catch (err) {
         console.error("Sold write fail: room updateDoc failed", err);
         handleFirestoreError(err, OperationType.UPDATE, `rooms/${room.id}`);
@@ -390,9 +445,6 @@ export const ActiveAuction: React.FC<ActiveAuctionProps> = ({
         console.error("Sold write fail: chat setDoc failed", err);
         handleFirestoreError(err, OperationType.CREATE, `rooms/${room.id}/chats/${chatMsgId}`);
       }
-
-      // Auto Advance to next roster item
-      moveToNextPlayer(room.currentPlayerIndex + 1);
     } catch (e) {
       console.error("Sold write fail general catch:", e);
     }
@@ -403,10 +455,37 @@ export const ActiveAuction: React.FC<ActiveAuctionProps> = ({
       if (!activePlayer) return;
       const roomRef = doc(db, "rooms", room.id);
 
-      await updateDoc(roomRef, {
-        status: "lobby",
-        timerExpiresAt: null
-      });
+      // Figure out the next player state info
+      const targetIndex = room.currentPlayerIndex + 1;
+      let updateFields: any = {
+        currentBidLakhs: 0,
+        currentBidderId: null,
+        currentBidderName: null,
+      };
+
+      if (targetIndex >= room.playerPoolIds.length) {
+        updateFields.status = "finished";
+        updateFields.currentPlayerId = null;
+        updateFields.timerExpiresAt = null;
+      } else {
+        const nextId = room.playerPoolIds[targetIndex];
+        const nextPlayer = IPL_PLAYERS_POOL.find(p => p.id === nextId);
+        const isPoolChanged = nextPlayer && activePlayer.setId !== nextPlayer.setId;
+
+        updateFields.currentPlayerIndex = targetIndex;
+        updateFields.currentPlayerId = nextId;
+
+        if (isPoolChanged) {
+          updateFields.status = "intermission";
+          updateFields.timerExpiresAt = null;
+          updateFields.intermissionExpiresAt = Date.now() + 5000;
+        } else {
+          updateFields.status = "bidding";
+          updateFields.timerExpiresAt = Date.now() + (room.timerDurationSeconds || 15) * 1000;
+        }
+      }
+
+      await updateDoc(roomRef, updateFields);
 
       const logId = `log_unsold_${Date.now()}`;
       await setDoc(doc(db, `rooms/${room.id}/logs`, logId), {
@@ -427,35 +506,82 @@ export const ActiveAuction: React.FC<ActiveAuctionProps> = ({
         text: unsoldMessage,
         createdAt: new Date().toISOString()
       });
-
-      moveToNextPlayer(room.currentPlayerIndex + 1);
     } catch (e) {
       console.error(e);
     }
   };
 
   const moveToNextPlayer = async (targetIndex: number) => {
-    const roomRef = doc(db, "rooms", room.id);
-    if (targetIndex >= room.playerPoolIds.length) {
-      // Completed pool!
-      await updateDoc(roomRef, {
-        status: "finished",
-        currentPlayerId: null
-      });
-      return;
-    }
+    try {
+      if (!activePlayer) return;
+      const roomRef = doc(db, "rooms", room.id);
 
-    const nextId = room.playerPoolIds[targetIndex];
-    await updateDoc(roomRef, {
-      status: "bidding",
-      currentPlayerIndex: targetIndex,
-      currentPlayerId: nextId,
-      currentBidLakhs: 0,
-      currentBidderId: null,
-      currentBidderName: null,
-      timerExpiresAt: Date.now() + (room.timerDurationSeconds || 15) * 1000
-    });
+      let updateFields: any = {
+        currentBidLakhs: 0,
+        currentBidderId: null,
+        currentBidderName: null,
+      };
+
+      if (targetIndex >= room.playerPoolIds.length) {
+        updateFields.status = "finished";
+        updateFields.currentPlayerId = null;
+        updateFields.timerExpiresAt = null;
+      } else {
+        const nextId = room.playerPoolIds[targetIndex];
+        const nextPlayer = IPL_PLAYERS_POOL.find(p => p.id === nextId);
+        const isPoolChanged = nextPlayer && activePlayer.setId !== nextPlayer.setId;
+
+        updateFields.currentPlayerIndex = targetIndex;
+        updateFields.currentPlayerId = nextId;
+
+        if (isPoolChanged) {
+          updateFields.status = "intermission";
+          updateFields.timerExpiresAt = null;
+          updateFields.intermissionExpiresAt = Date.now() + 5000;
+        } else {
+          updateFields.status = "bidding";
+          updateFields.timerExpiresAt = Date.now() + (room.timerDurationSeconds || 15) * 1000;
+        }
+      }
+
+      await updateDoc(roomRef, updateFields);
+    } catch (e) {
+      console.error("Skip player failed:", e);
+    }
   };
+
+  if (room.status === "intermission") {
+    const nextPlayer = IPL_PLAYERS_POOL.find(p => p.id === room.currentPlayerId);
+    const setInfo = PLAYER_SETS.find(s => s.id === nextPlayer?.setId);
+
+    return (
+      <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-6 shadow-lg flex flex-col justify-center items-center text-center py-16 gap-6 min-h-[500px] animate-fade-in text-neutral-350">
+        <div className="text-4xl animate-bounce">🎯</div>
+        <div>
+          <span className="text-xs uppercase font-mono tracking-widest text-amber-500 font-bold block mb-1">
+            Pool Segment Complete!
+          </span>
+          <h2 className="text-2xl font-black text-white uppercase tracking-wide">
+            {setInfo ? setInfo.name : "Next Player Pool"}
+          </h2>
+          <p className="text-xs text-neutral-400 mt-2 max-w-md mx-auto leading-relaxed font-sans">
+            Budgets locked! Ready your tactics. The next segment of the mega auction will commence shortly.
+          </p>
+        </div>
+
+        <div className="bg-neutral-950 px-8 py-3.5 border border-neutral-850 rounded-2xl font-mono text-center shadow-inner">
+          <span className="text-[10px] text-neutral-500 block uppercase tracking-wider mb-1 font-semibold">AUTOMATIC RESUME IN</span>
+          <span className="text-3xl font-black text-amber-500">
+            00:0{intermissionTimeLeft}
+          </span>
+        </div>
+
+        <div className="text-[10px] uppercase font-mono text-neutral-500 tracking-wider font-semibold">
+          Total Players Drafted: <span className="text-neutral-300 font-bold">{room.currentPlayerIndex}</span> of {room.playerPoolIds.length}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5 shadow-lg flex flex-col h-full">
