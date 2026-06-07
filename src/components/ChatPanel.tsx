@@ -24,7 +24,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [chatText, setChatText] = useState("");
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const chatContainerRef = useRef<HTMLDivElement | null>(null);
 
   // Voice WebRTC states
   const [isMicEnabled, setIsMicEnabled] = useState(false);
@@ -65,9 +65,11 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     };
   }, [roomId]);
 
-  // Scroll to bottom whenever messages update
+  // Scroll to bottom of chat container whenever messages update without shifting the page viewport
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
   }, [messages]);
 
   const handleSendChat = async (e: React.FormEvent) => {
@@ -321,7 +323,11 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
       </div>
 
       {/* Chattings display */}
-      <div id="chats-display-box" className="flex-1 overflow-y-auto max-h-[170px] space-y-2 mb-3 pr-1 text-xs font-sans">
+      <div 
+        id="chats-display-box" 
+        ref={chatContainerRef}
+        className="flex-1 overflow-y-auto max-h-[170px] space-y-2 mb-3 pr-1 text-xs font-sans"
+      >
         {messages.length === 0 ? (
           <div className="text-center text-neutral-600 italic py-6">
             Banter chamber empty. Enter draft bets below.
@@ -337,7 +343,6 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             </div>
           ))
         )}
-        <div ref={messagesEndRef} />
       </div>
 
       {/* Sending message bar */}
