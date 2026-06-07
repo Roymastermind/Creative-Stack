@@ -32,6 +32,7 @@ export const ActiveAuction: React.FC<ActiveAuctionProps> = ({
   const [timeLeft, setTimeLeft] = useState<number>(0);
   const [isBotEnabled, setIsBotEnabled] = useState<boolean>(room.gameMode !== "multiplayer");
   const [activeTab, setActiveTab] = useState<"pool" | "logs">("logs");
+  const [timeoutPlayerId, setTimeoutPlayerId] = useState<string | null>(null);
 
   // Timer Ticker Loop
   useEffect(() => {
@@ -48,12 +49,15 @@ export const ActiveAuction: React.FC<ActiveAuctionProps> = ({
       // Trigger automatic host transition: Sold/Unsold when time runs out
       if (diff === 0 && isHost) {
         clearInterval(interval);
-        handleAuctionTimeout();
+        if (timeoutPlayerId !== room.currentPlayerId) {
+          setTimeoutPlayerId(room.currentPlayerId);
+          handleAuctionTimeout();
+        }
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [room.status, room.timerExpiresAt, isHost, room.currentPlayerId, room.currentBidLakhs]);
+  }, [room.status, room.timerExpiresAt, isHost, room.currentPlayerId, room.currentBidLakhs, timeoutPlayerId]);
 
   const [intermissionTimeLeft, setIntermissionTimeLeft] = useState<number>(0);
 
@@ -171,13 +175,16 @@ export const ActiveAuction: React.FC<ActiveAuctionProps> = ({
   const handleAuctionTimeout = async () => {
     if (!room.currentPlayerId) return;
 
-    if (room.currentBidderId) {
-      // Sold!
-      await commitSoldTransaction(room.currentBidderId, room.currentBidLakhs);
-    } else {
-      // Unsold!
-      await commitUnsoldTransaction();
-    }
+    // Delay commit by 4 seconds so participants see the gorgeous glowing green/red sold/unsold status animations
+    setTimeout(async () => {
+      if (room.currentBidderId) {
+        // Sold!
+        await commitSoldTransaction(room.currentBidderId, room.currentBidLakhs);
+      } else {
+        // Unsold!
+        await commitUnsoldTransaction();
+      }
+    }, 4000);
   };
 
   const calculateNextBid = (currentBid: number): number => {
@@ -584,27 +591,27 @@ export const ActiveAuction: React.FC<ActiveAuctionProps> = ({
   }
 
   return (
-    <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5 shadow-lg flex flex-col h-full">
+    <div className="bg-neutral-900/60 backdrop-blur-md border border-neutral-800/80 rounded-2xl p-6 shadow-2xl flex flex-col h-full relative overflow-hidden">
       
       {/* Player Block Header & Status indicators */}
-      <div className="flex flex-col bg-neutral-950 p-4 border border-neutral-850 rounded-xl mb-4 gap-4">
+      <div className="flex flex-col bg-gradient-to-br from-neutral-950 via-neutral-950 to-neutral-900/80 p-5 border border-neutral-850/80 rounded-2xl mb-4 gap-4 shadow-inner relative overflow-hidden">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
           <div>
-            <span className="text-[10px] font-mono tracking-widest text-neutral-500 uppercase">
-              ACTIVE BLOCK: {room.currentPlayerIndex + 1} OF {room.playerPoolIds.length}
+            <span className="text-[10px] font-mono tracking-widest text-[#9ca3af] uppercase bg-neutral-900/75 border border-neutral-800/80 px-2 py-0.5 rounded-md font-bold inline-block mb-1.5 shadow-sm">
+              ACTIVE DETECTOR BLOCK: {room.currentPlayerIndex + 1} OF {room.playerPoolIds.length}
             </span>
-            <h2 className="text-xl font-sans font-extrabold text-white">
+            <h2 className="text-2xl font-sans font-black text-white tracking-wide uppercase">
               {activePlayer ? activePlayer.name : "Waiting For Block..."}
             </h2>
-            <div className="flex gap-2 mt-1">
-              <span className="bg-amber-500/10 border border-amber-500/20 text-amber-400 font-mono text-[10px] px-2 py-0.5 rounded-full">
-                {activePlayer?.category}
+            <div className="flex gap-2 mt-2">
+              <span className="bg-amber-500/10 border border-amber-500/25 text-amber-400 font-mono text-[10px] px-2.5 py-0.5 rounded-full font-bold">
+                🏏 {activePlayer?.category}
               </span>
-              <span className="bg-neutral-800 text-neutral-300 font-mono text-[10px] px-2 py-0.5 rounded-full">
-                {activePlayer?.country}
+              <span className="bg-neutral-850 border border-neutral-800 text-neutral-300 font-mono text-[10px] px-2.5 py-0.5 rounded-full font-semibold">
+                🌍 {activePlayer?.country}
               </span>
-              <span className="bg-neutral-800 text-neutral-400 font-mono text-[10px] px-2 py-0.5 rounded-full">
-                {activePlayer?.teamAssociation}
+              <span className="bg-neutral-850 border border-neutral-800 text-neutral-400 font-mono text-[10px] px-2.5 py-0.5 rounded-full font-medium">
+                🏟️ {activePlayer?.teamAssociation}
               </span>
             </div>
           </div>
@@ -749,24 +756,52 @@ export const ActiveAuction: React.FC<ActiveAuctionProps> = ({
               TENDER PLATFORM
             </div>
 
-            <div className="text-center py-3 bg-neutral-900/40 border border-neutral-850 rounded-lg">
-              <span className="text-[10px] font-mono text-neutral-500 uppercase block mb-1">
-                Highest Valid Bid
-              </span>
-              <div className="text-2xl font-black text-amber-400 font-mono">
-                {room.currentBidLakhs > 0 ? (
-                  `₹${(room.currentBidLakhs / 100).toFixed(2)} Cr`
-                ) : (
-                  <span className="text-neutral-600 text-lg font-bold">No Bids Placed Yet</span>
+            {timeLeft === 0 && room.status === "bidding" ? (
+              room.currentBidderId ? (
+                /* SOLD GREEN BLINK PANEL */
+                <div className="text-center py-4 px-3 bg-emerald-950/25 border border-emerald-500/80 rounded-lg animate-blink-green">
+                  <span className="text-xs font-mono text-emerald-400 uppercase tracking-widest block mb-1 font-black">
+                    ⚡ SOLD! ⚡
+                  </span>
+                  <div className="text-2xl font-black text-white font-sans tracking-wide">
+                    ₹{(room.currentBidLakhs / 100).toFixed(2)} Cr
+                  </div>
+                  <div className="text-xs text-emerald-250 mt-2 font-black uppercase tracking-wider">
+                    Drafted by {room.currentBidderName}
+                  </div>
+                </div>
+              ) : (
+                /* UNSOLD RED BLINK PANEL */
+                <div className="text-center py-5 px-3 bg-red-950/25 border border-red-500/80 rounded-lg animate-blink-red">
+                  <span className="text-xs font-mono text-red-400 uppercase tracking-widest block mb-1 font-black">
+                    ⚠️ UNSOLD ⚠️
+                  </span>
+                  <p className="text-[11px] text-red-300 font-extrabold leading-normal">
+                    No active offers received. Moving to re-entry deck.
+                  </p>
+                </div>
+              )
+            ) : (
+              /* ACTIVE HIGHEST VALID BID PANEL */
+              <div className="text-center py-3 bg-neutral-900/40 border border-neutral-850 rounded-lg transition-all duration-300 hover:border-amber-500/20">
+                <span className="text-[10px] font-mono text-neutral-500 uppercase block mb-1">
+                  Highest Valid Bid
+                </span>
+                <div className="text-2xl font-black text-amber-400 font-mono">
+                  {room.currentBidLakhs > 0 ? (
+                    `₹${(room.currentBidLakhs / 100).toFixed(2)} Cr`
+                  ) : (
+                    <span className="text-neutral-500 text-lg font-bold">No Bids Placed Yet</span>
+                  )}
+                </div>
+                
+                {room.currentBidderName && (
+                  <div className="text-xs text-neutral-300 font-sans mt-1.5 font-medium">
+                    Bidder: <span className="text-white bg-neutral-950 px-2 py-0.5 border border-neutral-800 rounded font-bold">{room.currentBidderName}</span>
+                  </div>
                 )}
               </div>
-              
-              {room.currentBidderName && (
-                <div className="text-xs text-neutral-300 font-sans mt-1.5 font-medium">
-                  Bidder: <span className="text-white bg-neutral-950 px-2 py-0.5 border border-neutral-800 rounded font-bold">{room.currentBidderName}</span>
-                </div>
-              )}
-            </div>
+            )}
           </div>
 
           <div className="mt-4 space-y-2">
@@ -780,13 +815,23 @@ export const ActiveAuction: React.FC<ActiveAuctionProps> = ({
                 onClick={executePlaceBid}
                 disabled={room.currentBidderId === activeMemberId || room.status !== "bidding" || timeLeft <= 0 || !activePlayer}
                 className={`w-full font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-1.5 transition text-sm ${
-                  room.currentBidderId === activeMemberId
-                    ? "bg-amber-500/20 text-amber-400/80 border border-amber-500/20 cursor-not-allowed"
-                    : "bg-amber-500 hover:bg-amber-600 text-black shadow-lg transform active:scale-[0.98]"
+                  timeLeft === 0 && room.status === "bidding"
+                    ? room.currentBidderId
+                      ? "bg-emerald-500/10 text-emerald-400/80 border border-emerald-500/20 cursor-not-allowed select-none"
+                      : "bg-red-500/10 text-red-400/80 border border-red-500/20 cursor-not-allowed select-none"
+                    : room.currentBidderId === activeMemberId
+                      ? "bg-amber-500/20 text-amber-400/80 border border-amber-500/20 cursor-not-allowed"
+                      : "bg-amber-500 hover:bg-amber-600 text-black shadow-lg transform active:scale-[0.98]"
                 }`}
               >
                 <Gavel className="w-4 h-4" />
-                {room.currentBidderId === activeMemberId ? (
+                {timeLeft === 0 && room.status === "bidding" ? (
+                  room.currentBidderId ? (
+                    "HAMMER DOWN: SOLD!"
+                  ) : (
+                    "HAMMER DOWN: UNSOLD"
+                  )
+                ) : room.currentBidderId === activeMemberId ? (
                   "YOU HAVE THE HIGHEST BID"
                 ) : (
                   activePlayer ? (
